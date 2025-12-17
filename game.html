@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Tank Turret Defense</title>
+<style>
+body {
+    margin: 0;
+    background: black;
+    color: #0f0;
+    font-family: monospace;
+    text-align: center;
+}
+canvas {
+    display: none;
+    margin: auto;
+    background: #050505;
+}
+button {
+    padding: 10px 20px;
+    margin: 8px;
+    font-size: 16px;
+    cursor: pointer;
+}
+#menu, #gameOver {
+    margin-top: 120px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>TANK TURRET DEFENSE</h2>
+
+<!-- START MENU -->
+<div id="menu">
+    <p>Select Difficulty</p>
+    <button onclick="startGame('easy')">EASY 😈</button>
+    <button onclick="startGame('medium')">MEDIUM</button>
+    <button onclick="startGame('hard')">HARD 💀</button>
+</div>
+
+<!-- GAME CANVAS -->
+<canvas id="game" width="800" height="600"></canvas>
+
+<!-- GAME OVER -->
+<div id="gameOver" style="display:none;">
+    <h3>GAME OVER</h3>
+    <p id="finalScore"></p>
+    <p id="bestScore"></p>
+    <button onclick="restart()">RESTART</button>
+    <button onclick="backToMenu()">MENU</button>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let bullets = [];
+let drones = [];
+let powerUps = [];
+
+let score = 0;
+let wave = 1;
+let enemiesLeft = 0;
+let gameOver = false;
+let boss = null;
+let difficulty = "medium";
+
+let highScore = Number(localStorage.getItem("highscore")) || 0;
+
+// ================== TANK ==================
+const tank = {
+    x: 400,
+    y: 550,
+    radius: 25
+};
+
+// ================== CLASSES ==================
+class Bullet {
+    constructor(x, y, angle) {
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.speed = 8;
+        this.radius = 4;
+        this.damage = 1;
+    }
+    update() {
+        this.x += Math.cos(this.angle) * this.speed;
+        this.y += Math.sin(this.angle) * this.speed;
+    }
+    draw() {
+        ctx.fillStyle = "#0f0";
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+class Drone {
+    constructor(isBoss = false) {
+        this.isBoss = isBoss;
+        this.radius = isBoss ? 45 : 15;
+        this.maxHp = isBoss ? 80 + wave * 20 : 1;
+        this.hp = this.maxHp;
+        this.speed = isBoss ? 0.6 : 1.5 + Math.random();
+        this.x = Math.random() * 800;
+        this.y = -40;
+    }
+    update() {
+        const dx = tank.x - this.x;
+        const dy = tank.y - this.y;
+        const d = Math.hypot(dx, dy);
+        this.x += (dx / d) * this.speed;
+        this.y += (dy / d) * this.speed;
+    }
+    draw() {
+        ctx.fillStyle = this.isBoss ? "red" : "orange";
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+class PowerUp {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 12;
+        this.speed = 2;
+    }
+    update() { this.y += this.speed; }
+    draw() {
+        ctx.fillStyle = "cyan";
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+// ================== HELPERS ==================
+function hit(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y) < a.radius + b.radius;
+}
+
+// ================== INPUT ==================
+canvas.addEventListener("mousedown", e => {
+    if (gameOver) return;
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    const my = e.clientY - r.top;
+    bullets.push(
+        new Bullet(tank.x, tank.y, Math.atan2(my - tank.y, mx - tank.x))
+    );
+});
+
+// ================== WAVES ==================
+function startWave() {
+    drones = [];
+    boss = null;
+
+    let count = 5 + wave * 2;
+
+    // Difficulty twist
+    if (difficulty === "easy") count += 6;     // actually hard
+    if (difficulty === "hard") count -= 2;     // deceptive
+
+    if (wave % 5 === 0) {
+        boss = new Drone(true);
+        drones.push(boss);
+        enemiesLeft = 1;
+    } else {
+        enemiesLeft = count;
+        for (let i = 0; i < count; i++) drones.push(new Drone());
+    }
+}
+
+// ================== GAME LOOP ==================
+function update() {
+    ctx.clearRect(0, 0, 800, 600);
+
+    // Tank
+    ctx.fillStyle = "#0f0";
+    ctx.beginPath();
+    ctx.arc(tank.x, tank.y, tank.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bullets
+    bullets.forEach((b, bi) => {
+        b.update();
+        b.draw();
+        if (b.x < 0 || b.x > 800 || b.y < 0 || b.y > 600)
+            bullets.splice(bi, 1);
+    });
+
+    // Drones
+    drones.forEach((d, di) => {
+        d.update();
+        d.draw();
+
+        if (hit(d, tank)) endGame();
+
+        bullets.forEach((b, bi) => {
+            if (hit(b, d)) {
+                bullets.splice(bi, 1);
+                d.hp--;
+
+                if (d.hp <= 0) {
+                    // 🔥 POWER-UP DROP
+                    if (!d.isBoss && Math.random() < 0.25) {
+                        powerUps.push(new PowerUp(d.x, d.y));
+                    }
+                    drones.splice(di, 1);
+                    enemiesLeft--;
+                    score++;
+                }
+            }
+        });
+    });
+
+    // Power-ups (SHOT ONLY)
+    powerUps.forEach((p, pi) => {
+        p.update();
+        p.draw();
+
+        bullets.forEach((b, bi) => {
+            if (hit(b, p)) {
+                bullets.splice(bi, 1);
+                powerUps.splice(pi, 1);
+                score += 5; // reward for skill shot
+            }
+        });
+    });
+
+    // UI
+    ctx.fillStyle = "#0f0";
+    ctx.fillText(`Score: ${score}`, 10, 20);
+    ctx.fillText(`High: ${highScore}`, 10, 40);
+    ctx.fillText(`Wave: ${wave}`, 10, 60);
+
+    // 🔴 BOSS HEALTH BAR
+    if (boss) {
+        ctx.fillStyle = "red";
+        ctx.fillRect(200, 10, 400, 12);
+        ctx.fillStyle = "#0f0";
+        ctx.fillRect(200, 10, (boss.hp / boss.maxHp) * 400, 12);
+        ctx.strokeStyle = "#fff";
+        ctx.strokeRect(200, 10, 400, 12);
+    }
+
+    if (!gameOver && enemiesLeft <= 0) {
+        wave++;
+        startWave();
+    }
+
+    if (!gameOver) requestAnimationFrame(update);
+}
+
+// ================== GAME FLOW ==================
+function startGame(diff) {
+    difficulty = diff;
+    score = 0;
+    wave = 1;
+    bullets = [];
+    drones = [];
+    powerUps = [];
+    gameOver = false;
+
+    document.getElementById("menu").style.display = "none";
+    document.getElementById("gameOver").style.display = "none";
+    canvas.style.display = "block";
+
+    startWave();
+    update();
+}
+
+function endGame() {
+    gameOver = true;
+    canvas.style.display = "none";
+    document.getElementById("gameOver").style.display = "block";
+
+    if (score > highScore) {
+        highScore = score;
+        localStorage.setItem("highscore", highScore);
+    }
+
+    document.getElementById("finalScore").innerText = "Score: " + score;
+    document.getElementById("bestScore").innerText = "High Score: " + highScore;
+}
+
+function restart() {
+    startGame(difficulty);
+}
+
+function backToMenu() {
+    document.getElementById("menu").style.display = "block";
+    document.getElementById("gameOver").style.display = "none";
+}
+</script>
+</body>
+</html>
