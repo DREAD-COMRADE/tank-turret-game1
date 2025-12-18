@@ -32,7 +32,6 @@ button {
 
 <h2>TANK TURRET DEFENSE</h2>
 
-<!-- START MENU -->
 <div id="menu">
     <p>Select Difficulty</p>
     <button onclick="startGame('easy')">EASY 😈</button>
@@ -40,10 +39,8 @@ button {
     <button onclick="startGame('hard')">HARD 💀</button>
 </div>
 
-<!-- GAME CANVAS -->
 <canvas id="game" width="800" height="600"></canvas>
 
-<!-- GAME OVER -->
 <div id="gameOver" style="display:none;">
     <h3>GAME OVER</h3>
     <p id="finalScore"></p>
@@ -69,12 +66,12 @@ let difficulty = "medium";
 
 let highScore = Number(localStorage.getItem("highscore")) || 0;
 
+// 🔫 WEAPON STATE
+let weaponMode = "NORMAL"; // NORMAL | DOUBLE
+let weaponTimer = 0;
+
 // ================== TANK ==================
-const tank = {
-    x: 400,
-    y: 550,
-    radius: 25
-};
+const tank = { x: 400, y: 550, radius: 25 };
 
 // ================== CLASSES ==================
 class Bullet {
@@ -91,7 +88,7 @@ class Bullet {
         this.y += Math.sin(this.angle) * this.speed;
     }
     draw() {
-        ctx.fillStyle = "#0f0";
+        ctx.fillStyle = weaponMode === "DOUBLE" ? "cyan" : "#0f0";
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
         ctx.fill();
@@ -150,9 +147,14 @@ canvas.addEventListener("mousedown", e => {
     const r = canvas.getBoundingClientRect();
     const mx = e.clientX - r.left;
     const my = e.clientY - r.top;
-    bullets.push(
-        new Bullet(tank.x, tank.y, Math.atan2(my - tank.y, mx - tank.x))
-    );
+    const angle = Math.atan2(my - tank.y, mx - tank.x);
+
+    if (weaponMode === "DOUBLE") {
+        bullets.push(new Bullet(tank.x, tank.y, angle - 0.08));
+        bullets.push(new Bullet(tank.x, tank.y, angle + 0.08));
+    } else {
+        bullets.push(new Bullet(tank.x, tank.y, angle));
+    }
 });
 
 // ================== WAVES ==================
@@ -161,10 +163,8 @@ function startWave() {
     boss = null;
 
     let count = 5 + wave * 2;
-
-    // Difficulty twist
-    if (difficulty === "easy") count += 6;     // actually hard
-    if (difficulty === "hard") count -= 2;     // deceptive
+    if (difficulty === "easy") count += 6;
+    if (difficulty === "hard") count -= 2;
 
     if (wave % 5 === 0) {
         boss = new Drone(true);
@@ -207,10 +207,10 @@ function update() {
                 d.hp--;
 
                 if (d.hp <= 0) {
-                    // 🔥 POWER-UP DROP
                     if (!d.isBoss && Math.random() < 0.25) {
                         powerUps.push(new PowerUp(d.x, d.y));
                     }
+                    if (d.isBoss) boss = null; // ✅ FIX
                     drones.splice(di, 1);
                     enemiesLeft--;
                     score++;
@@ -219,28 +219,35 @@ function update() {
         });
     });
 
-    // Power-ups (SHOT ONLY)
+    // Power-ups (SHOT TO ACTIVATE)
     powerUps.forEach((p, pi) => {
         p.update();
         p.draw();
-
         bullets.forEach((b, bi) => {
             if (hit(b, p)) {
                 bullets.splice(bi, 1);
                 powerUps.splice(pi, 1);
-                score += 5; // reward for skill shot
+                weaponMode = "DOUBLE";
+                weaponTimer = 600; // 10 seconds
             }
         });
     });
+
+    // Weapon timer
+    if (weaponMode === "DOUBLE") {
+        weaponTimer--;
+        if (weaponTimer <= 0) weaponMode = "NORMAL";
+    }
 
     // UI
     ctx.fillStyle = "#0f0";
     ctx.fillText(`Score: ${score}`, 10, 20);
     ctx.fillText(`High: ${highScore}`, 10, 40);
     ctx.fillText(`Wave: ${wave}`, 10, 60);
+    if (weaponMode === "DOUBLE") ctx.fillText("DOUBLE SHOT", 650, 20);
 
-    // 🔴 BOSS HEALTH BAR
-    if (boss) {
+    // 🔴 BOSS HEALTH BAR (FIXED)
+    if (boss && boss.hp > 0) {
         ctx.fillStyle = "red";
         ctx.fillRect(200, 10, 400, 12);
         ctx.fillStyle = "#0f0";
@@ -265,6 +272,7 @@ function startGame(diff) {
     bullets = [];
     drones = [];
     powerUps = [];
+    weaponMode = "NORMAL";
     gameOver = false;
 
     document.getElementById("menu").style.display = "none";
